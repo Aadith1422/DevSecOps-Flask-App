@@ -11,3 +11,5 @@ htmlcov/
 scannerwork/
 trivy-report.json
 trivy-report.txt
+sbom.cdx.json
+.scannerwork/

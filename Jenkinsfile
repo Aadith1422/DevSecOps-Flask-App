@@ -8,23 +8,30 @@ pipeline {
     }
 
     environment {
-        SONAR_SCANNER_HOME = tool 'SonarScanner'
-        TRIVY_CACHE_DIR = '/var/lib/jenkins/.cache/trivy'
+        PYTHONUNBUFFERED = '1'
+        VENV_DIR = '.jenkins-venv'
     }
 
     stages {
-        stage('Checkout GitHub') {
+
+        stage('Checkout Source Code') {
             steps {
                 checkout scm
+                sh 'git log -1 --oneline'
             }
         }
 
-        stage('Setup Python') {
+        stage('Setup Python Environment') {
             steps {
                 sh '''
+                    set -e
+
                     python3 -m venv .jenkins-venv
+
                     .jenkins-venv/bin/python -m pip install --upgrade pip
+
                     .jenkins-venv/bin/python -m pip install -r requirements.txt
+
                     .jenkins-venv/bin/python -m pip install pytest-cov
                 '''
             }
@@ -32,27 +39,27 @@ pipeline {
 
         stage('Unit Tests and Coverage') {
             steps {
-                withEnv([
-                    'SECRET_KEY=jenkins-ci-test-key-not-for-production'
-                ]) {
-                    sh '''
-                        .jenkins-venv/bin/python -m pytest tests/ -v \
-                          --cov=app \
-                          --cov=forms \
-                          --cov=models \
-                          --cov-report=term-missing \
-                          --cov-report=xml:coverage.xml
-                    '''
-                }
+                sh '''
+                    set -e
+
+                    .jenkins-venv/bin/python -m pytest tests/ -v \
+                      --cov=app \
+                      --cov=forms \
+                      --cov=models \
+                      --cov-report=term-missing \
+                      --cov-report=xml:coverage.xml
+                '''
             }
         }
 
         stage('SonarQube Cloud SAST') {
             steps {
-                withSonarQubeEnv('SonarCloud') {
-                    sh '''
-                        "$SONAR_SCANNER_HOME/bin/sonar-scanner"
-                    '''
+                script {
+                    def scannerHome = tool 'SonarScanner'
+
+                    withSonarQubeEnv('SonarCloud') {
+                        sh "${scannerHome}/bin/sonar-scanner"
+                    }
                 }
             }
         }
@@ -60,19 +67,21 @@ pipeline {
         stage('Trivy SCA - Vulnerability Report') {
             steps {
                 sh '''
-                    mkdir -p "$TRIVY_CACHE_DIR"
+                    set -e
 
                     trivy fs \
                       --scanners vuln \
                       --severity HIGH,CRITICAL \
-                      --skip-dirs .jenkins-venv \
                       --skip-dirs venv \
+                      --skip-dirs .jenkins-venv \
                       --skip-dirs .scannerwork \
                       --skip-dirs instance \
                       --format json \
                       --output trivy-report.json \
                       --exit-code 0 \
                       .
+
+                    echo "Trivy vulnerability report generated"
                 '''
             }
         }
@@ -80,34 +89,59 @@ pipeline {
         stage('Trivy SCA - Security Gate') {
             steps {
                 sh '''
+                    set -e
+
                     trivy fs \
                       --scanners vuln \
                       --severity CRITICAL \
-                      --skip-dirs .jenkins-venv \
                       --skip-dirs venv \
+                      --skip-dirs .jenkins-venv \
                       --skip-dirs .scannerwork \
                       --skip-dirs instance \
                       --exit-code 1 \
                       .
+
+                    echo "Trivy security gate passed"
+                '''
+            }
+        }
+
+        stage('Syft SBOM Generation') {
+            steps {
+                sh '''
+                    set -e
+
+                    /usr/local/bin/syft dir:. \
+                      --exclude './venv/**' \
+                      --exclude './.jenkins-venv/**' \
+                      --exclude './instance/**' \
+                      --exclude './.scannerwork/**' \
+                      --exclude './.git/**' \
+                      -o cyclonedx-json=sbom.cdx.json
+
+                    python3 -m json.tool sbom.cdx.json > /dev/null
+
+                    echo "CycloneDX SBOM generated successfully"
+                    ls -lh sbom.cdx.json
                 '''
             }
         }
     }
 
     post {
+        always {
+            archiveArtifacts(
+                artifacts: 'coverage.xml,trivy-report.json,sbom.cdx.json',
+                allowEmptyArchive: true
+            )
+        }
+
         success {
-            echo 'DevSecOps CI, SonarQube SAST and Trivy SCA passed!'
+            echo 'SUCCESS: CI tests, SonarQube SAST, Trivy SCA and Syft SBOM completed!'
         }
 
         failure {
-            echo 'Pipeline failed. Review the test or security scan results.'
-        }
-
-        always {
-            archiveArtifacts(
-                artifacts: 'coverage.xml,trivy-report.json',
-                allowEmptyArchive: true
-            )
+            echo 'FAILED: Check the Jenkins console output for errors.'
         }
     }
 }
