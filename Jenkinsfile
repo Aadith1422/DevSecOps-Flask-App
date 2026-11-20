@@ -33,15 +33,14 @@ pipeline {
                 sh '''
                     set -e
 
-                    python3 -m venv .jenkins-venv
+                    python3 -m venv "${VENV_DIR}"
 
-                    .jenkins-venv/bin/python -m pip install --upgrade pip
+                    "${VENV_DIR}/bin/python" -m pip install --upgrade pip
 
-                    .jenkins-venv/bin/python -m pip install \
+                    "${VENV_DIR}/bin/python" -m pip install \
                         -r requirements.txt
 
-                    .jenkins-venv/bin/python -m pip install \
-                        pytest-cov
+                    "${VENV_DIR}/bin/python" -m pip install pytest-cov
 
                     echo "Python environment ready"
                 '''
@@ -57,7 +56,7 @@ pipeline {
                     sh '''
                         set -e
 
-                        .jenkins-venv/bin/python -m pytest tests/ -v \
+                        "${VENV_DIR}/bin/python" -m pytest tests/ -v \
                             --cov=app \
                             --cov=forms \
                             --cov=models \
@@ -146,7 +145,6 @@ pipeline {
                     python3 -m json.tool sbom.cdx.json > /dev/null
 
                     echo "CycloneDX SBOM generated successfully"
-
                     ls -lh sbom.cdx.json
                 '''
             }
@@ -163,7 +161,6 @@ pipeline {
                         .
 
                     echo "Docker image built successfully"
-
                     docker image ls "${IMAGE_NAME}"
                 '''
             }
@@ -204,12 +201,38 @@ pipeline {
                 '''
             }
         }
+
+        // STAGE 11: OWASP ZAP DAST BASELINE SCAN
+        stage('OWASP ZAP DAST Baseline Scan') {
+            steps {
+                sh '''
+                    set -e
+
+                    echo "Starting OWASP ZAP DAST baseline scan"
+
+                    test -f scripts/run-zap-baseline.sh
+
+                    chmod +x scripts/run-zap-baseline.sh
+
+                    ./scripts/run-zap-baseline.sh
+
+                    echo "OWASP ZAP DAST baseline scan completed"
+
+                    echo "Generated ZAP reports:"
+                    ls -lh zap-reports/
+
+                    test -s zap-reports/zap-report.html
+                    test -s zap-reports/zap-report.json
+                    test -s zap-reports/zap-report.md
+                '''
+            }
+        }
     }
 
     post {
         always {
             archiveArtifacts(
-                artifacts: 'coverage.xml,trivy-report.json,trivy-image-report.json,sbom.cdx.json',
+                artifacts: 'coverage.xml,trivy-report.json,trivy-image-report.json,sbom.cdx.json,zap-reports/*',
                 allowEmptyArchive: true
             )
         }
@@ -227,6 +250,9 @@ pipeline {
                 Syft SBOM             : GENERATED
                 Docker Image Build    : SUCCESS
                 Trivy Image Scan      : PASSED
+                Trivy Image Gate      : PASSED
+                OWASP ZAP DAST        : COMPLETED
+                ZAP Reports           : GENERATED
                 ==========================================
             '''
         }

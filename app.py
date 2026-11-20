@@ -224,9 +224,6 @@ def delete_student(student_id):
     return redirect(url_for("students"))
 
 
-with app.app_context():
-    os.makedirs(app.instance_path, exist_ok=True)
-    db.create_all()
 
 
 if __name__ == "__main__":

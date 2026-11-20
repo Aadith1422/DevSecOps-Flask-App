@@ -17,7 +17,7 @@ RUN pip install \
     --require-hashes \
     -r requirements.lock
 
-COPY app.py models.py forms.py ./
+COPY app.py models.py forms.py init_db.py ./
 COPY templates/ ./templates/
 COPY static/ ./static/
 
@@ -28,4 +28,4 @@ USER appuser
 
 EXPOSE 5000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "app:app"]
+CMD ["sh", "-c", "python init_db.py && exec gunicorn --bind 0.0.0.0:5000 --workers 2 app:app"]
