@@ -1,0 +1,19 @@
+
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Welcome, {{ current_user.username }}!</h1>
+    <p>You are successfully authenticated.</p>
+
+    <h3>Total Students: {{ student_count }}</h3>
+
+    <a class="btn" href="{{ url_for('students') }}">
+        View Students
+    </a>
+
+    <p>Your role: {{ current_user.role }}</p>
+</div>
+{% endblock %}

@@ -1,0 +1,82 @@
+
+{% extends "base.html" %}
+
+{% block title %}Students{% endblock %}
+
+{% block content %}
+<h1>Student Records</h1>
+
+{% if current_user.role == "admin" %}
+<div class="card">
+    <h2>{{ "Edit Student" if editing_student is defined else "Add Student" }}</h2>
+
+    {% set active_form = edit_form if edit_form is defined else form %}
+
+    <form method="POST"
+          action="{% if editing_student is defined %}{{ url_for('edit_student', student_id=editing_student.id) }}{% else %}{{ url_for('add_student') }}{% endif %}">
+
+        {{ active_form.hidden_tag() }}
+
+        {% for field in [active_form.name, active_form.email, active_form.course, active_form.age] %}
+            <div class="field">
+                {{ field.label }}
+                {{ field(class="input") }}
+                {% for error in field.errors %}
+                    <small class="error">{{ error }}</small>
+                {% endfor %}
+            </div>
+        {% endfor %}
+
+        {{ active_form.submit(class="btn") }}
+    </form>
+</div>
+{% endif %}
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Course</th>
+                <th>Age</th>
+                {% if current_user.role == "admin" %}
+                    <th>Actions</th>
+                {% endif %}
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for student in students %}
+            <tr>
+                <td>{{ student.id }}</td>
+                <td>{{ student.name }}</td>
+                <td>{{ student.email }}</td>
+                <td>{{ student.course }}</td>
+                <td>{{ student.age }}</td>
+
+                {% if current_user.role == "admin" %}
+                <td>
+                    <a href="{{ url_for('edit_student', student_id=student.id) }}">
+                        Edit
+                    </a>
+
+                    <form method="POST"
+                          action="{{ url_for('delete_student', student_id=student.id) }}"
+                          class="inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit">Delete</button>
+                    </form>
+                </td>
+                {% endif %}
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6">No students found.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
