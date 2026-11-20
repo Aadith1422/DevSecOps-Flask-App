@@ -53,16 +53,16 @@ fi
 
 echo "Flask health check passed"
 
+
 echo "Running OWASP ZAP baseline scan..."
 
-# Use a writable temporary HOME for ZAP, while keeping
-# report files owned by the Jenkins user.
 docker run --rm \
     --network "$ZAP_NETWORK" \
     --user "$(id -u):$(id -g)" \
     --workdir /zap/wrk \
     --entrypoint /bin/bash \
     -e HOME=/zap/wrk \
+    -e JAVA_TOOL_OPTIONS="-Duser.home=/zap/wrk" \
     -v "$REPORT_DIR:/zap/wrk:rw" \
     ghcr.io/zaproxy/zaproxy:stable \
     -c 'set -e; exec /zap/zap-baseline.py \
@@ -81,3 +81,4 @@ test -s "$REPORT_DIR/zap-report.json"
 test -s "$REPORT_DIR/zap-report.md"
 
 echo "OWASP ZAP baseline scan completed"
+
