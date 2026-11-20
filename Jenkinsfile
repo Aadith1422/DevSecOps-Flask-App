@@ -9,6 +9,7 @@ pipeline {
 
     environment {
         SONAR_SCANNER_HOME = tool 'SonarScanner'
+        TRIVY_CACHE_DIR = '/var/lib/jenkins/.cache/trivy'
     }
 
     stages {
@@ -55,20 +56,56 @@ pipeline {
                 }
             }
         }
+
+        stage('Trivy SCA - Vulnerability Report') {
+            steps {
+                sh '''
+                    mkdir -p "$TRIVY_CACHE_DIR"
+
+                    trivy fs \
+                      --scanners vuln \
+                      --severity HIGH,CRITICAL \
+                      --skip-dirs .jenkins-venv \
+                      --skip-dirs venv \
+                      --skip-dirs .scannerwork \
+                      --skip-dirs instance \
+                      --format json \
+                      --output trivy-report.json \
+                      --exit-code 0 \
+                      .
+                '''
+            }
+        }
+
+        stage('Trivy SCA - Security Gate') {
+            steps {
+                sh '''
+                    trivy fs \
+                      --scanners vuln \
+                      --severity CRITICAL \
+                      --skip-dirs .jenkins-venv \
+                      --skip-dirs venv \
+                      --skip-dirs .scannerwork \
+                      --skip-dirs instance \
+                      --exit-code 1 \
+                      .
+                '''
+            }
+        }
     }
 
     post {
         success {
-            echo 'DevSecOps CI + SonarQube SAST passed!'
+            echo 'DevSecOps CI, SonarQube SAST and Trivy SCA passed!'
         }
 
         failure {
-            echo 'Pipeline failed. Check Jenkins console output.'
+            echo 'Pipeline failed. Review the test or security scan results.'
         }
 
         always {
             archiveArtifacts(
-                artifacts: 'coverage.xml',
+                artifacts: 'coverage.xml,trivy-report.json',
                 allowEmptyArchive: true
             )
         }

@@ -9,3 +9,5 @@ coverage.xml
 .coverage
 htmlcov/
 scannerwork/
+trivy-report.json
+trivy-report.txt
