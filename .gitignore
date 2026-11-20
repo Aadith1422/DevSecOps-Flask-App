@@ -13,3 +13,4 @@ trivy-report.json
 trivy-report.txt
 sbom.cdx.json
 .scannerwork/
+trivy-image-report.json

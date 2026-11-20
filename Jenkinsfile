@@ -10,20 +10,24 @@ pipeline {
     environment {
         PYTHONUNBUFFERED = '1'
         VENV_DIR = '.jenkins-venv'
+        IMAGE_NAME = 'devsecops-flask-app'
     }
 
     stages {
 
+        // STAGE 1: GITHUB CHECKOUT
         stage('Checkout Source Code') {
             steps {
                 checkout scm
 
                 sh '''
+                    set -e
                     git log -1 --oneline
                 '''
             }
         }
 
+        // STAGE 2: PYTHON ENVIRONMENT
         stage('Setup Python Environment') {
             steps {
                 sh '''
@@ -33,15 +37,18 @@ pipeline {
 
                     .jenkins-venv/bin/python -m pip install --upgrade pip
 
-                    .jenkins-venv/bin/python -m pip install -r requirements.txt
+                    .jenkins-venv/bin/python -m pip install \
+                        -r requirements.txt
 
-                    .jenkins-venv/bin/python -m pip install pytest-cov
+                    .jenkins-venv/bin/python -m pip install \
+                        pytest-cov
 
                     echo "Python environment ready"
                 '''
             }
         }
 
+        // STAGE 3: UNIT TESTING AND COVERAGE
         stage('Unit Tests and Coverage') {
             steps {
                 withEnv([
@@ -51,11 +58,11 @@ pipeline {
                         set -e
 
                         .jenkins-venv/bin/python -m pytest tests/ -v \
-                          --cov=app \
-                          --cov=forms \
-                          --cov=models \
-                          --cov-report=term-missing \
-                          --cov-report=xml:coverage.xml
+                            --cov=app \
+                            --cov=forms \
+                            --cov=models \
+                            --cov-report=term-missing \
+                            --cov-report=xml:coverage.xml
 
                         echo "Unit tests and coverage completed"
                     '''
@@ -63,6 +70,7 @@ pipeline {
             }
         }
 
+        // STAGE 4: SONARQUBE CLOUD SAST
         stage('SonarQube Cloud SAST') {
             steps {
                 script {
@@ -77,60 +85,63 @@ pipeline {
             }
         }
 
+        // STAGE 5: TRIVY SCA REPORT
         stage('Trivy SCA - Vulnerability Report') {
             steps {
                 sh '''
                     set -e
 
                     trivy fs \
-                      --scanners vuln \
-                      --severity HIGH,CRITICAL \
-                      --skip-dirs venv \
-                      --skip-dirs .jenkins-venv \
-                      --skip-dirs .scannerwork \
-                      --skip-dirs instance \
-                      --format json \
-                      --output trivy-report.json \
-                      --exit-code 0 \
-                      .
+                        --scanners vuln \
+                        --severity HIGH,CRITICAL \
+                        --skip-dirs venv \
+                        --skip-dirs .jenkins-venv \
+                        --skip-dirs .scannerwork \
+                        --skip-dirs instance \
+                        --format json \
+                        --output trivy-report.json \
+                        --exit-code 0 \
+                        .
 
                     echo "Trivy vulnerability report generated"
                 '''
             }
         }
 
+        // STAGE 6: TRIVY SCA SECURITY GATE
         stage('Trivy SCA - Security Gate') {
             steps {
                 sh '''
                     set -e
 
                     trivy fs \
-                      --scanners vuln \
-                      --severity CRITICAL \
-                      --skip-dirs venv \
-                      --skip-dirs .jenkins-venv \
-                      --skip-dirs .scannerwork \
-                      --skip-dirs instance \
-                      --exit-code 1 \
-                      .
+                        --scanners vuln \
+                        --severity CRITICAL \
+                        --skip-dirs venv \
+                        --skip-dirs .jenkins-venv \
+                        --skip-dirs .scannerwork \
+                        --skip-dirs instance \
+                        --exit-code 1 \
+                        .
 
-                    echo "Trivy security gate passed"
+                    echo "Trivy SCA security gate passed"
                 '''
             }
         }
 
+        // STAGE 7: SOFTWARE BILL OF MATERIALS
         stage('Syft SBOM Generation') {
             steps {
                 sh '''
                     set -e
 
                     /usr/local/bin/syft dir:. \
-                      --exclude './venv/**' \
-                      --exclude './.jenkins-venv/**' \
-                      --exclude './instance/**' \
-                      --exclude './.scannerwork/**' \
-                      --exclude './.git/**' \
-                      -o cyclonedx-json=sbom.cdx.json
+                        --exclude './venv/**' \
+                        --exclude './.jenkins-venv/**' \
+                        --exclude './instance/**' \
+                        --exclude './.scannerwork/**' \
+                        --exclude './.git/**' \
+                        -o cyclonedx-json=sbom.cdx.json
 
                     python3 -m json.tool sbom.cdx.json > /dev/null
 
@@ -140,22 +151,94 @@ pipeline {
                 '''
             }
         }
+
+        // STAGE 8: DOCKER IMAGE BUILD
+        stage('Docker Image Build') {
+            steps {
+                sh '''
+                    set -e
+
+                    docker build \
+                        -t "${IMAGE_NAME}:${BUILD_NUMBER}" \
+                        .
+
+                    echo "Docker image built successfully"
+
+                    docker image ls "${IMAGE_NAME}"
+                '''
+            }
+        }
+
+        // STAGE 9: TRIVY DOCKER IMAGE REPORT
+        stage('Trivy Docker Image Scan') {
+            steps {
+                sh '''
+                    set -e
+
+                    trivy image \
+                        --scanners vuln \
+                        --severity HIGH,CRITICAL \
+                        --format json \
+                        --output trivy-image-report.json \
+                        --exit-code 0 \
+                        "${IMAGE_NAME}:${BUILD_NUMBER}"
+
+                    echo "Docker image vulnerability report generated"
+                '''
+            }
+        }
+
+        // STAGE 10: DOCKER IMAGE SECURITY GATE
+        stage('Trivy Docker Image Security Gate') {
+            steps {
+                sh '''
+                    set -e
+
+                    trivy image \
+                        --scanners vuln \
+                        --severity CRITICAL \
+                        --exit-code 1 \
+                        "${IMAGE_NAME}:${BUILD_NUMBER}"
+
+                    echo "Docker image security gate passed"
+                '''
+            }
+        }
     }
 
     post {
         always {
             archiveArtifacts(
-                artifacts: 'coverage.xml,trivy-report.json,sbom.cdx.json',
+                artifacts: 'coverage.xml,trivy-report.json,trivy-image-report.json,sbom.cdx.json',
                 allowEmptyArchive: true
             )
         }
 
         success {
-            echo 'SUCCESS: CI tests, SonarQube SAST, Trivy SCA and Syft SBOM completed!'
+            echo '''
+                ==========================================
+                  DEVSECOPS PIPELINE SUCCESSFUL
+                ==========================================
+                GitHub Checkout       : SUCCESS
+                Python Environment    : SUCCESS
+                Unit Tests            : SUCCESS
+                SonarQube Cloud SAST   : COMPLETED
+                Trivy SCA             : PASSED
+                Syft SBOM             : GENERATED
+                Docker Image Build    : SUCCESS
+                Trivy Image Scan      : PASSED
+                ==========================================
+            '''
         }
 
         failure {
-            echo 'FAILED: Check Jenkins console output for errors.'
+            echo '''
+                ==========================================
+                  DEVSECOPS PIPELINE FAILED
+                ==========================================
+                Check Jenkins Console Output for details.
+                ==========================================
+            '''
         }
     }
 }
