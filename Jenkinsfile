@@ -214,7 +214,7 @@ pipeline {
 
                     chmod +x scripts/run-zap-baseline.sh
 
-                    ./scripts/run-zap-baseline.sh
+                    bash scripts/run-zap-baseline.sh
 
                     echo "OWASP ZAP DAST baseline scan completed"
 
