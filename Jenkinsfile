@@ -17,7 +17,10 @@ pipeline {
         stage('Checkout Source Code') {
             steps {
                 checkout scm
-                sh 'git log -1 --oneline'
+
+                sh '''
+                    git log -1 --oneline
+                '''
             }
         }
 
@@ -33,22 +36,30 @@ pipeline {
                     .jenkins-venv/bin/python -m pip install -r requirements.txt
 
                     .jenkins-venv/bin/python -m pip install pytest-cov
+
+                    echo "Python environment ready"
                 '''
             }
         }
 
         stage('Unit Tests and Coverage') {
             steps {
-                sh '''
-                    set -e
+                withEnv([
+                    'SECRET_KEY=jenkins-ci-test-only-secret-key-not-for-production'
+                ]) {
+                    sh '''
+                        set -e
 
-                    .jenkins-venv/bin/python -m pytest tests/ -v \
-                      --cov=app \
-                      --cov=forms \
-                      --cov=models \
-                      --cov-report=term-missing \
-                      --cov-report=xml:coverage.xml
-                '''
+                        .jenkins-venv/bin/python -m pytest tests/ -v \
+                          --cov=app \
+                          --cov=forms \
+                          --cov=models \
+                          --cov-report=term-missing \
+                          --cov-report=xml:coverage.xml
+
+                        echo "Unit tests and coverage completed"
+                    '''
+                }
             }
         }
 
@@ -58,7 +69,9 @@ pipeline {
                     def scannerHome = tool 'SonarScanner'
 
                     withSonarQubeEnv('SonarCloud') {
-                        sh "${scannerHome}/bin/sonar-scanner"
+                        sh """
+                            "${scannerHome}/bin/sonar-scanner"
+                        """
                     }
                 }
             }
@@ -122,6 +135,7 @@ pipeline {
                     python3 -m json.tool sbom.cdx.json > /dev/null
 
                     echo "CycloneDX SBOM generated successfully"
+
                     ls -lh sbom.cdx.json
                 '''
             }
@@ -141,7 +155,7 @@ pipeline {
         }
 
         failure {
-            echo 'FAILED: Check the Jenkins console output for errors.'
+            echo 'FAILED: Check Jenkins console output for errors.'
         }
     }
 }
