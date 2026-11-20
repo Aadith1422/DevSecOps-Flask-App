@@ -11,7 +11,10 @@ RUN groupadd --system appgroup && \
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt gunicorn
+RUN pip install \
+    --no-cache-dir \
+    --only-binary=:all: \
+    -r requirements.txt
 
 COPY app.py models.py forms.py ./
 COPY templates/ ./templates/
