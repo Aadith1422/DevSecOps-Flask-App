@@ -5,3 +5,7 @@ __pycache__/
 .pytest_cache/
 *.pyc
 .jenkins-venv/
+coverage.xml
+.coverage
+htmlcov/
+scannerwork/
