@@ -9,12 +9,13 @@ WORKDIR /app
 RUN groupadd --system appgroup && \
     useradd --system --gid appgroup --home-dir /app appuser
 
-COPY requirements.txt .
+COPY requirements.lock .
 
 RUN pip install \
     --no-cache-dir \
     --only-binary=:all: \
-    -r requirements.txt
+    --require-hashes \
+    -r requirements.lock
 
 COPY app.py models.py forms.py ./
 COPY templates/ ./templates/
