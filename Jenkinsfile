@@ -217,7 +217,7 @@ pipeline {
                     docker run -d \
                         --name devsecops-flask-staging \
                         --restart unless-stopped \
-                        -p 127.0.0.1:5001:5000 \
+                        -p 127.0.0.1:5050:5000 \
                         -e SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')" \
                         "${IMAGE_NAME}:${BUILD_NUMBER}"
 
