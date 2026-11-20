@@ -59,15 +59,10 @@ echo "Running OWASP ZAP baseline scan..."
 docker run --rm \
     --network "$ZAP_NETWORK" \
     --user "$(id -u):$(id -g)" \
+    --workdir /zap/wrk \
+    -e HOME=/zap/wrk \
     -v "$REPORT_DIR:/zap/wrk:rw" \
     ghcr.io/zaproxy/zaproxy:stable \
-    zap-baseline.py \
-    -t "$APP_URL" \
-    -m 2 \
-    -r zap-report.html \
-    -J zap-report.json \
-    -w zap-report.md \
-    -I
 
 echo "OWASP ZAP baseline scan completed"
 
