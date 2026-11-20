@@ -5,6 +5,7 @@ pipeline {
     options {
         timestamps()
         skipDefaultCheckout(true)
+        disableConcurrentBuilds()
     }
 
     environment {
@@ -202,21 +203,63 @@ pipeline {
             }
         }
 
-        // STAGE 11: OWASP ZAP DAST BASELINE SCAN
-        stage('OWASP ZAP DAST Baseline Scan') {
+        // STAGE 11: DEPLOY FLASK TO STAGING
+        stage('Deploy Flask to Staging') {
             steps {
                 sh '''
                     set -e
 
-                    echo "Starting OWASP ZAP DAST baseline scan"
+                    echo "Deploying Flask application to staging..."
 
-                    test -f scripts/run-zap-baseline.sh
+                    docker rm -f devsecops-flask-staging \
+                        2>/dev/null || true
 
-                    chmod +x scripts/run-zap-baseline.sh
+                    docker run -d \
+                        --name devsecops-flask-staging \
+                        --restart unless-stopped \
+                        -p 127.0.0.1:5001:5000 \
+                        -e SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')" \
+                        "${IMAGE_NAME}:${BUILD_NUMBER}"
 
-                    bash scripts/run-zap-baseline.sh
+                    echo "Waiting for staging health check..."
 
-                    echo "OWASP ZAP DAST baseline scan completed"
+                    HEALTHY=0
+
+                    for i in $(seq 1 30); do
+                        if docker exec devsecops-flask-staging \
+                            python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)" \
+                            >/dev/null 2>&1; then
+
+                            HEALTHY=1
+                            break
+                        fi
+
+                        sleep 2
+                    done
+
+                    if [ "$HEALTHY" -ne 1 ]; then
+                        echo "Staging deployment failed"
+                        docker logs devsecops-flask-staging
+                        exit 1
+                    fi
+
+                    echo "Staging deployment successful"
+                    docker ps --filter name=devsecops-flask-staging
+                '''
+            }
+        }
+
+        // STAGE 12: POST-DEPLOYMENT DAST
+        stage('OWASP ZAP Post-Deployment DAST') {
+            steps {
+                sh '''
+                    set -e
+
+                    echo "Starting OWASP ZAP post-deployment DAST scan..."
+
+                    test -f scripts/run-zap-staging.sh
+
+                    bash scripts/run-zap-staging.sh
 
                     echo "Generated ZAP reports:"
                     ls -lh zap-reports/
@@ -224,6 +267,8 @@ pipeline {
                     test -s zap-reports/zap-report.html
                     test -s zap-reports/zap-report.json
                     test -s zap-reports/zap-report.md
+
+                    echo "Post-deployment DAST scan completed"
                 '''
             }
         }
@@ -251,6 +296,7 @@ pipeline {
                 Docker Image Build    : SUCCESS
                 Trivy Image Scan      : PASSED
                 Trivy Image Gate      : PASSED
+                Staging Deployment    : SUCCESS
                 OWASP ZAP DAST        : COMPLETED
                 ZAP Reports           : GENERATED
                 ==========================================
@@ -262,7 +308,7 @@ pipeline {
                 ==========================================
                   DEVSECOPS PIPELINE FAILED
                 ==========================================
-                Check Jenkins Console Output for details.
+                  Check Jenkins Console Output for details.
                 ==========================================
             '''
         }
