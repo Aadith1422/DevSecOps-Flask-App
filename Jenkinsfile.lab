@@ -1,0 +1,40 @@
+
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        skipDefaultCheckout(true)
+    }
+
+    stages {
+        stage('Checkout Lab Branch') {
+            steps {
+                checkout scm
+
+                sh '''
+                    set -e
+                    test "$(git rev-parse HEAD)" = "$(git rev-parse refs/remotes/origin/security-validation-lab)"
+                    git log -1 --oneline
+                '''
+            }
+        }
+
+        stage('SonarCloud SAST Lab Scan') {
+            steps {
+                script {
+                    def scannerHome = tool 'SonarScanner'
+
+                    withSonarQubeEnv('SonarCloud') {
+                        sh """
+                            "${scannerHome}/bin/sonar-scanner" \
+                              -Dsonar.projectKey=aadith1422_devsecops-flask-security-lab \
+                              -Dsonar.python.coverage.reportPaths=
+                        """
+                    }
+                }
+            }
+        }
+    }
+}
