@@ -1,10 +1,10 @@
-
 #!/usr/bin/env bash
 set -euo pipefail
 
 STAGING_CONTAINER="devsecops-flask-staging"
 ZAP_NETWORK="devsecops-zap-staging-${BUILD_NUMBER:-local}"
 REPORT_DIR="$(pwd)/zap-reports"
+CONFIG_FILE="$(pwd)/scripts/zap-public.yaml"
 
 mkdir -p "$REPORT_DIR"
 
@@ -21,19 +21,26 @@ cleanup() {
 
 trap cleanup EXIT
 
+echo "Checking ZAP configuration..."
+test -s "$CONFIG_FILE"
+
 echo "Creating ZAP scan network..."
 docker network create "$ZAP_NETWORK"
 
 echo "Connecting deployed staging application..."
 docker network connect "$ZAP_NETWORK" "$STAGING_CONTAINER"
 
-APP_URL="http://${STAGING_CONTAINER}:5000"
-
-echo "Checking deployed application..."
+echo "Checking deployed staging application..."
 docker exec "$STAGING_CONTAINER" \
     python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)"
 
-echo "Running OWASP ZAP against deployed staging..."
+echo "Running OWASP ZAP Automation Framework..."
+
+# Remove old reports so a failed scan cannot reuse previous results.
+rm -f \
+    "$REPORT_DIR/zap-report.html" \
+    "$REPORT_DIR/zap-report.json" \
+    "$REPORT_DIR/zap-report.md"
 
 docker run --rm \
     --network "$ZAP_NETWORK" \
@@ -43,15 +50,11 @@ docker run --rm \
     -e HOME=/zap/wrk \
     -e JAVA_TOOL_OPTIONS="-Duser.home=/zap/wrk" \
     -v "$REPORT_DIR:/zap/wrk:rw" \
+    -v "$CONFIG_FILE:/zap/wrk/zap-public.yaml:ro" \
     ghcr.io/zaproxy/zaproxy:stable \
-    -c 'set -e; exec /zap/zap-baseline.py \
-        -t "$1" \
-        -m 2 \
-        -r zap-report.html \
-        -J zap-report.json \
-        -w zap-report.md \
-        -I' \
-    bash "$APP_URL"
+    -c 'set -e; exec /zap/zap.sh \
+        -cmd \
+        -autorun /zap/wrk/zap-public.yaml'
 
 echo "Verifying generated DAST reports..."
 
